@@ -38,11 +38,11 @@
     <!-- Header -->
     <header class="relative z-10 p-6 flex flex-col md:flex-row justify-between items-center gap-4">
         <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 px-4 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-full shadow-sm">
-                <img src="../assets/img/spinotek-logo.png" alt="Spinotek" class="h-5 opacity-80">
+            <a href="../#projects" class="flex items-center gap-2 px-4 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-full shadow-sm hover:shadow-md transition-all group">
+                <img src="../assets/img/spinotek-logo.png" alt="Spinotek" class="h-5 opacity-80 group-hover:opacity-100 transition-opacity">
                 <span class="text-slate-300">|</span>
-                <img src="../assets/img/logo-hima-ti.png" alt="HIMA TI" class="h-6 opacity-80">
-            </div>
+                <img src="../assets/img/logo-hima-ti.png" alt="HIMA TI" class="h-6 opacity-80 group-hover:opacity-100 transition-opacity">
+            </a>
         </div>
         <div class="text-center md:text-right">
             <h1 class="text-2xl font-black text-slate-900">Dev<span class="text-primary">Toolkit</span></h1>
@@ -197,8 +197,24 @@
         </div>
     </footer>
 
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl opacity-0 translate-y-10 transition-all duration-300 pointer-events-none z-50">
+        <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        <span class="text-sm font-bold tracking-wide" id="toast-msg">Copied to clipboard!</span>
+    </div>
+
     <!-- Script Logic for All Tools -->
     <script>
+        // --- Utils ---
+        function showToast(msg = "Copied to clipboard!") {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.classList.remove('opacity-0', 'translate-y-10');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-10');
+            }, 2500);
+        }
+
         // --- Tool 1: Password Generator ---
         function generatePass() {
             const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -211,6 +227,7 @@
             const pass = document.getElementById('pass-display');
             pass.select();
             document.execCommand("copy");
+            showToast("Password copied!");
         }
         document.getElementById('pass-len').addEventListener('input', (e) => {
             document.getElementById('pass-len-val').innerText = e.target.value;
@@ -249,6 +266,7 @@
         }
         function copyLorem() {
             navigator.clipboard.writeText(document.getElementById('lorem-output').innerText);
+            showToast("Lorem Ipsum copied!");
         }
         document.getElementById('lorem-count').addEventListener('input', generateLorem);
         generateLorem(); // Init
