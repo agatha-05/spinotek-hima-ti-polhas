@@ -166,23 +166,33 @@ function renderLogs(logs) {
     }
 
     // Incremental Update
-    // Only append NEW logs. If log count reset (reset system), clear all.
     if (logs.length < lastLogCount) {
         elements.actionLog.innerHTML = '';
         lastLogCount = 0;
     }
 
     const newLogs = logs.slice(lastLogCount);
-    if (newLogs.length === 0) return; // No changes
+    if (newLogs.length === 0) return;
 
     const fragment = document.createDocumentFragment();
     newLogs.forEach(log => {
         const div = document.createElement('div');
         div.className = 'log-entry';
-        // Add specific class for failure/success if present (e.g. type='failure')
-        if (log.type === 'failure') div.style.color = 'var(--cy-neon-red)';
 
-        div.innerHTML = `<span class="log-time">[${log.timestamp}]</span> ${log.message}`;
+        // Handle Legacy Logs vs New Structure
+        const time = log.time || log.timestamp;
+        const msg = log.message;
+        const category = log.category || 'SYSTEM';
+        const severity = log.severity || (log.type === 'failure' ? 'ERROR' : 'INFO');
+
+        // Color Coding
+        let color = 'var(--cy-text-dim)';
+        if (severity === 'SUCCESS') color = 'var(--cy-neon-green)';
+        if (severity === 'WARN') color = 'var(--cy-neon-gold)';
+        if (severity === 'ERROR' || severity === 'CRITICAL') color = 'var(--cy-neon-red)';
+
+        div.style.color = color;
+        div.innerHTML = `<span class="log-time" style="opacity:0.6">[${time}]</span> <span style="font-weight:bold; opacity:0.8">[${category}]</span> ${msg}`;
         fragment.appendChild(div);
     });
 
