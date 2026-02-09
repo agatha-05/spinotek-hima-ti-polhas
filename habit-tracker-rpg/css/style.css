@@ -923,3 +923,9 @@ body.is-fainted {
 .close-btn:hover {
     color: #fff;
 }
+
+.cy-btn-warn {
+    border-color: var(--cy-neon-red) !important;
+    color: var(--cy-neon-red) !important;
+    animation: blink 0.5s infinite alternate;
+}

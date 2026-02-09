@@ -35,6 +35,36 @@ window.UI = {
             core.classList.toggle('collapsed');
             core.classList.toggle('active');
         }
+    },
+
+    /**
+     * Transaction Safety Wrapper
+     * Prevents accidental purchases.
+     */
+    safeTransaction(btn, callback) {
+        if (btn.dataset.confirming) {
+            // Confirmed execute
+            callback();
+            // Reset UI state (though re-render usually wipes it)
+            btn.removeAttribute('data-confirming');
+            btn.innerHTML = btn.dataset.originalText;
+            btn.classList.remove('cy-btn-warn');
+        } else {
+            // First click - Ask confirmation
+            btn.dataset.confirming = 'true';
+            btn.dataset.originalText = btn.innerHTML;
+            btn.innerHTML = 'CONFIRM?';
+            btn.classList.add('cy-btn-warn'); // Assumes we add this CSS or reuse existing
+
+            // Auto-reset after 3s
+            setTimeout(() => {
+                if (btn && btn.parentNode) { // Check if still in DOM
+                    btn.removeAttribute('data-confirming');
+                    btn.innerHTML = btn.dataset.originalText;
+                    btn.classList.remove('cy-btn-warn');
+                }
+            }, 3000);
+        }
     }
 };
 
@@ -102,7 +132,7 @@ function renderDashboard(char) {
             stabilizerBtn.style.marginTop = '10px';
             stabilizerBtn.style.borderColor = 'var(--cy-neon-gold)';
             stabilizerBtn.style.color = 'var(--cy-neon-gold)';
-            stabilizerBtn.onclick = () => window.Store.triggerStabilizer();
+            stabilizerBtn.onclick = (e) => window.UI.safeTransaction(e.target, () => window.Store.triggerStabilizer());
 
             // Append to char-info
             const container = document.querySelector('.char-info');
@@ -288,7 +318,7 @@ function renderAugmentations(character) {
                 <span class="upgrade-meta">Lvl ${currentLevel}/${upgrade.maxLevel}</span>
             </div>
             <button class="upgrade-btn" 
-                onclick="window.Store.purchaseUpgrade('${type}'); window.UI.refreshAugmentations()"
+                onclick="window.UI.safeTransaction(this, () => { window.Store.purchaseUpgrade('${type}'); window.UI.refreshAugmentations(); })"
                 ${btnDisabled ? 'disabled' : ''}>
                 ${costLabel}
             </button>
