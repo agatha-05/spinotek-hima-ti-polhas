@@ -127,13 +127,23 @@ window.Store = {
     triggerStabilizer() {
         // Validate state first to prevent wasted gold
         this.validateState();
-        if (state.character.status !== window.RPG.CHARACTER_STATUS.FAINTED) {
-            addLog(`SYSTEM: Stabilizer aborted. Neural patterns already normalized.`, 'system');
-            return;
+
+        // Use Guard Function
+        const char = state.character;
+        if (!window.RPG.canUseNeuralStabilizer(char)) {
+            // Specific feedback based on why it failed
+            if (char.status !== window.RPG.CHARACTER_STATUS.FAINTED) {
+                addLog(`SYSTEM: Stabilizer aborted. Neural patterns already normalized.`, 'system');
+            } else if (char.debuff && char.debuff.stabilized) {
+                addLog(`SYSTEM: Stabilizer aborted. Already active.`, 'system');
+            } else if (char.gold < window.RPG.NEURAL_STABILIZER_COST) {
+                addLog(`SYSTEM: Stabilizer aborted. Insufficient resources.`, 'failure');
+            }
+            return; // Stop execution
         }
 
         const { useNeuralStabilizer } = window.RPG;
-        const result = useNeuralStabilizer(state.character);
+        const result = useNeuralStabilizer(char);
 
         if (result.success) {
             state.character = result.character;
@@ -147,8 +157,18 @@ window.Store = {
 
     purchaseUpgrade(type) {
         this.validateState(); // Ensure stats are fresh
+
+        // Use Guard Function
+        const char = state.character;
+        // Note: Logic inside purchaseUpgrade also checks this, but Store shouldn't call it if invalid.
+        if (!window.RPG.canPurchaseUpgrade(char, type)) {
+            addLog(`SYSTEM: Authorization denied. Criteria met for ${type}? [NEGATIVE]`, 'failure');
+            notify();
+            return;
+        }
+
         const { purchaseUpgrade } = window.RPG;
-        const result = purchaseUpgrade(state.character, type);
+        const result = purchaseUpgrade(char, type);
 
         if (result.success) {
             state.character = result.character;

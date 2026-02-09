@@ -252,6 +252,41 @@ function purchaseUpgrade(character, type) {
     };
 }
 
+/**
+ * Guard Functions (Defensive Programming)
+ */
+function canExecuteHabit(character) {
+    // Current design allows execution even if FAINTED (with penalty).
+    // Future proofing: might block if character is "DEAD" or "LOCKED".
+    return !!character;
+}
+
+function canAbortHabit(character) {
+    // Always allowed to fail.
+    return !!character;
+}
+
+function canUseNeuralStabilizer(character) {
+    if (!character || character.status !== CHARACTER_STATUS.FAINTED) return false;
+    if (character.debuff && character.debuff.stabilized) return false;
+    if (character.gold < NEURAL_STABILIZER_COST) return false;
+    return true;
+}
+
+function canPurchaseUpgrade(character, type) {
+    if (!character) return false;
+    const upgrade = UPGRADE_TYPES[type];
+    if (!upgrade) return false;
+
+    const currentLevel = (character.passiveUpgrades && character.passiveUpgrades[type]) || 0;
+    if (currentLevel >= upgrade.maxLevel) return false;
+
+    const cost = getUpgradeCost(type, currentLevel);
+    if (character.gold < cost) return false;
+
+    return true;
+}
+
 // Expose to Global Scope
 window.RPG = {
     DIFFICULTY_TIERS,
@@ -265,5 +300,10 @@ window.RPG = {
     useNeuralStabilizer,
     getUpgradeCost,
     getMaxHp,
-    purchaseUpgrade
+    purchaseUpgrade,
+    // Guard Functions
+    canExecuteHabit,
+    canAbortHabit,
+    canUseNeuralStabilizer,
+    canPurchaseUpgrade
 };
