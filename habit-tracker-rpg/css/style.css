@@ -1200,3 +1200,180 @@ body.is-fainted {
         text-shadow: 0 0 5px currentColor;
     }
 }
+
+/* ========================================
+   ANIMATION CONTRACT SYSTEM
+   JS toggles these classes, CSS handles animations
+   ======================================== */
+
+/* --- ANIMATION CLASSES --- */
+.anim-enter {
+    animation: anim-fade-in 0.3s ease-out forwards;
+}
+
+.anim-active {
+    animation: anim-pulse 1.5s infinite;
+}
+
+.anim-exit {
+    animation: anim-fade-out 0.3s ease-in forwards;
+}
+
+.anim-fail {
+    animation: anim-shake 0.5s ease-in-out;
+}
+
+/* --- ANIMATION KEYFRAMES --- */
+@keyframes anim-fade-in {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes anim-fade-out {
+    from {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(0.9) translateY(-5px);
+    }
+}
+
+@keyframes anim-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 5px currentColor;
+    }
+
+    50% {
+        opacity: 0.8;
+        box-shadow: 0 0 15px currentColor;
+    }
+}
+
+@keyframes anim-shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    10%,
+    30%,
+    50%,
+    70%,
+    90% {
+        transform: translateX(-4px);
+    }
+
+    20%,
+    40%,
+    60%,
+    80% {
+        transform: translateX(4px);
+    }
+}
+
+/* --- STATUS CLASSES --- */
+.status-normal {
+    border-color: var(--cy-neon-green);
+    color: var(--cy-neon-green);
+}
+
+.status-fainted {
+    border-color: var(--cy-neon-red);
+    color: var(--cy-neon-red);
+    animation: anim-pulse 1.5s infinite;
+}
+
+.status-stabilized {
+    border-color: var(--cy-neon-gold);
+    color: var(--cy-neon-gold);
+}
+
+.status-weakened {
+    border-color: var(--cy-neon-red);
+    color: var(--cy-neon-red);
+    animation: anim-pulse 2s infinite;
+}
+
+.status-overloaded {
+    border-color: #ff9900;
+    color: #ff9900;
+}
+
+/* --- LOG SEVERITY CLASSES --- */
+.log-info {
+    color: var(--cy-text-dim);
+}
+
+.log-success {
+    color: var(--cy-neon-green);
+}
+
+.log-warn {
+    color: var(--cy-neon-gold);
+}
+
+.log-error {
+    color: var(--cy-neon-red);
+}
+
+.log-critical {
+    color: var(--cy-neon-red);
+    font-weight: bold;
+    animation: anim-pulse 1s infinite;
+}
+
+/* --- UTILITY CLASSES --- */
+.cy-btn-gold-inline {
+    background: none;
+    border: none;
+    color: var(--cy-neon-gold);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1.2em;
+    vertical-align: middle;
+    transition: text-shadow 0.2s ease;
+}
+
+.cy-btn-gold-inline:hover {
+    text-shadow: 0 0 8px var(--cy-neon-gold);
+}
+
+.cy-btn-stabilizer {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.log-time {
+    opacity: 0.6;
+}
+
+.log-category {
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.exp-penalty {
+    font-size: 0.6em;
+}
+
+.penalty-fainted {
+    color: var(--cy-neon-red);
+}
+
+.penalty-stabilized {
+    color: var(--cy-neon-gold);
+}

@@ -29,7 +29,10 @@ function getInitialState() {
                 hasFainted: false,
                 hasUpgraded: false,
                 faintCount: 0,
-                lastActionTimestamp: 0
+                lastActionTimestamp: 0,
+                dailyHabitAdds: 0,
+                dailyExp: 0,
+                isFirstAction: true
             }
         },
         habits: [
@@ -52,6 +55,32 @@ function getInitialState() {
 let state = null;
 let listeners = [];
 
+/**
+ * Atomic Transaction Wrapper
+ * Provides rollback capability for critical operations.
+ */
+function atomicTransaction(actionFn) {
+    const snapshot = JSON.parse(JSON.stringify(state));
+    try {
+        const result = actionFn();
+
+        // Validate state after action
+        const validation = window.RPG.assertValidCharacterState(state.character);
+        if (validation.wasRepaired) {
+            console.warn('Transaction made repairs:', validation.repairs);
+            state.character = validation.character;
+        }
+
+        save();
+        return { success: true, result };
+    } catch (error) {
+        // Rollback on error
+        state = snapshot;
+        console.error('Transaction failed, rolled back:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 function load() {
     const raw = localStorage.getItem(STORAGE_KEY);
     const defaults = getInitialState();
@@ -61,13 +90,30 @@ function load() {
             state = JSON.parse(raw);
             // Ensure data integrity (merge with defaults)
             if (!state.character) state.character = { ...defaults.character };
-            // Ensure debuff field exists if migrating from older version (though we changed key)
             if (state.character.debuff === undefined) state.character.debuff = null;
             if (!state.character.passiveUpgrades) state.character.passiveUpgrades = { ...defaults.character.passiveUpgrades };
 
             if (!state.habits) state.habits = [...defaults.habits];
             if (!state.logs) state.logs = [...defaults.logs];
             if (!state.logContext) state.logContext = { ...defaults.logContext };
+
+            // RECOVERY: Validate and repair character state
+            const validation = window.RPG.assertValidCharacterState(state.character);
+            if (validation.wasRepaired) {
+                console.warn('Load recovery made repairs:', validation.repairs);
+                state.character = validation.character;
+                // Log repairs to user
+                validation.repairs.forEach(repair => {
+                    state.logs.push({
+                        id: Date.now(),
+                        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+                        message: `SYSTEM: Auto-repair: ${repair}`,
+                        category: 'SYSTEM',
+                        severity: 'WARN'
+                    });
+                });
+            }
+
         } catch (e) {
             console.error('Failed to parse save data', e);
             state = JSON.parse(JSON.stringify(defaults));
@@ -87,6 +133,13 @@ function load() {
 }
 
 function save() {
+    // Final validation before save
+    const validation = window.RPG.assertValidCharacterState(state.character);
+    if (validation.wasRepaired) {
+        console.warn('Save validation made repairs:', validation.repairs);
+        state.character = validation.character;
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     notify();
 }
@@ -126,6 +179,17 @@ window.Store = {
             return null;
         }
         load();
+
+        // Check Daily Reset on init
+        const { checkDailyReset } = window.RPG;
+        const resetChar = checkDailyReset(state.character);
+        if (resetChar !== state.character) {
+            state.character = resetChar;
+            if (resetChar.flags && resetChar.flags.isFirstAction) {
+                this.addLogEntry('SYSTEM: New day detected. Daily counters reset. Welcome back.', 'SYSTEM', 'INFO');
+            }
+            save();
+        }
 
         // Bind visibility change to auto-validate
         document.addEventListener('visibilitychange', () => {
@@ -216,13 +280,12 @@ window.Store = {
     },
 
     triggerStabilizer() {
-        // Validate state first to prevent wasted gold
         this.validateState();
 
-        // Use Guard Function
         const char = state.character;
+
+        // Check conditions BEFORE transaction (so logs aren't rolled back)
         if (!window.RPG.canUseNeuralStabilizer(char)) {
-            // Specific feedback based on why it failed
             if (char.status !== window.RPG.CHARACTER_STATUS.FAINTED) {
                 this.addLogEntry(`SYSTEM: Stabilizer aborted. Neural patterns already normalized.`, 'SYSTEM', 'INFO');
             } else if (char.debuff && char.debuff.stabilized) {
@@ -230,37 +293,40 @@ window.Store = {
             } else if (char.gold < window.RPG.NEURAL_STABILIZER_COST) {
                 this.addLogEntry(`SYSTEM: Stabilizer aborted. Insufficient resources.`, 'SYSTEM', 'ERROR');
             }
-            return; // Stop execution
+            return { success: false };
         }
 
-        const { useNeuralStabilizer } = window.RPG;
-        const result = useNeuralStabilizer(char);
+        // Execute in transaction
+        return atomicTransaction(() => {
+            const result = window.RPG.useNeuralStabilizer(state.character);
+            if (!result.success) {
+                throw new Error(result.reason);
+            }
 
-        if (result.success) {
             state.character = result.character;
             this.addLogEntry(`SYSTEM: Neural Stabilizer activated. EXP penalty reduced.`, 'SYSTEM', 'SUCCESS');
-            save(); // Triggers notify
-        } else {
-            this.addLogEntry(`SYSTEM: Stabilizer failed. ${result.reason}`, 'SYSTEM', 'ERROR');
-            notify(); // Ensure UI reflects any attempt
-        }
+            return result;
+        });
     },
 
     purchaseUpgrade(type) {
-        this.validateState(); // Ensure stats are fresh
+        this.validateState();
 
-        // Use Guard Function
         const char = state.character;
+
+        // Check conditions BEFORE transaction (so logs aren't rolled back)
         if (!window.RPG.canPurchaseUpgrade(char, type)) {
             this.addLogEntry(`SYSTEM: Authorization denied. Criteria met for ${type}? [NEGATIVE]`, 'SYSTEM', 'ERROR');
-            notify();
-            return;
+            return { success: false };
         }
 
-        const { purchaseUpgrade } = window.RPG;
-        const result = purchaseUpgrade(char, type);
+        // Execute in transaction
+        return atomicTransaction(() => {
+            const result = window.RPG.purchaseUpgrade(state.character, type);
+            if (!result.success) {
+                throw new Error(result.reason);
+            }
 
-        if (result.success) {
             // Narrative Flag
             if (!state.character.flags) state.character.flags = { hasUpgraded: false };
             if (!state.character.flags.hasUpgraded) {
@@ -274,11 +340,8 @@ window.Store = {
 
             this.addLogEntry(`Augmentation installed: ${result.upgradeName} (Lvl ${result.newLevel})`, 'UPGRADE', 'SUCCESS');
             window.UI.triggerEffect('char-gold', 'anim-pulse');
-            save();
-        } else {
-            this.addLogEntry(`SYSTEM: Upgrade Error: ${result.reason}`, 'SYSTEM', 'ERROR');
-            notify();
-        }
+            return result;
+        });
     },
 
     /**
@@ -315,6 +378,17 @@ window.Store = {
 
     addHabit(habitData) {
         state.habits.push(habitData);
+
+        // Track daily adds for OVERLOADED status
+        if (!state.character.flags) state.character.flags = {};
+        state.character.flags.dailyHabitAdds = (state.character.flags.dailyHabitAdds || 0) + 1;
+
+        // Check for Overload Warning
+        const OVERLOAD_THRESHOLD = 5;
+        if (state.character.flags.dailyHabitAdds > OVERLOAD_THRESHOLD) {
+            this.addLogEntry('WARNING: Protocol overload detected. Mental fatigue accumulating.', 'SYSTEM', 'WARN');
+        }
+
         save();
         notify(); // Triggers UI re-render
     },
@@ -374,12 +448,20 @@ window.Store = {
         const habit = state.habits.find(h => h.id === habitId);
         if (!habit) return;
 
-        // RPG Logic
+        // RPG Logic (Now includes time context)
         const result = window.RPG.abortHabit(state.character, habit.difficulty);
         const hpLost = state.character.hp - result.hp;
 
+        // Time Context Log (from RPG logic)
+        if (result._contextLog) {
+            this.addLogEntry(result._contextLog, 'SYSTEM', 'INFO');
+        }
+
         // Narrative Logic
-        if (result.status === window.RPG.CHARACTER_STATUS.FAINTED && state.character.status !== window.RPG.CHARACTER_STATUS.FAINTED) {
+        if (result._stabilizedAbort) {
+            // STABILIZED mode abort - just log without HP damage
+            this.addLogEntry(`STABILIZED: '${habit.name}' aborted. System protected.`, 'COMBAT', 'INFO');
+        } else if (result.status === window.RPG.CHARACTER_STATUS.FAINTED && state.character.status !== window.RPG.CHARACTER_STATUS.FAINTED) {
             // Just Fainted
             const flags = state.character.flags || { faintCount: 0 };
             flags.faintCount = (flags.faintCount || 0) + 1;
@@ -394,7 +476,9 @@ window.Store = {
 
             this.addLogEntry(`[SYSTEM WARNING] Vital core depleted. EXP gain reduced for 24h.`, 'COMBAT', 'ERROR');
         } else {
-            this.addLogEntry(`FAILED '${habit.name}'. -${hpLost} HP.`, 'COMBAT', 'WARN');
+            // Night context modifier in message
+            const nightSuffix = result._isNight ? ' [NIGHT: Reduced Toll]' : '';
+            this.addLogEntry(`FAILED '${habit.name}'. -${hpLost} HP.${nightSuffix}`, 'COMBAT', 'WARN');
         }
 
         // Reset Streak

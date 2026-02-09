@@ -97,42 +97,36 @@ function renderDashboard(char) {
 
     // Basic Info
     elements.charLevel.textContent = String(char.level).padStart(2, '0');
-    elements.charGold.innerHTML = `${char.gold} <button onclick="window.UI.toggleAugmentationPanel(true)" style="background:none; border:none; color:var(--cy-neon-gold); cursor:pointer; font-weight:bold; font-size:1.2em; vertical-align:middle;">+</button>`;
+    elements.charGold.innerHTML = `${char.gold} <button onclick="window.UI.toggleAugmentationPanel(true)" class="cy-btn-gold-inline">+</button>`;
 
-    // Status Logic
+    // Status Logic - use viewState.statusClass (from selector)
     let statusText = char.status;
     if (viewState.isStabilized) statusText = "STABILIZED";
+    else if (viewState.isWeakened) statusText = "WEAKENED";
+    else if (viewState.isOverloaded) statusText = "OVERLOADED";
     elements.charStatus.textContent = statusText;
 
-    // Status Style
-    if (viewState.isFainted) {
-        elements.charStatus.className = viewState.isStabilized ? 'cy-badge stabilized' : 'cy-badge fainted';
-        elements.charStatus.style.borderColor = viewState.isStabilized ? 'var(--cy-neon-gold)' : 'var(--cy-neon-red)';
-        elements.charStatus.style.color = viewState.isStabilized ? 'var(--cy-neon-gold)' : 'var(--cy-neon-red)';
-    } else {
-        elements.charStatus.className = 'cy-badge';
-        elements.charStatus.removeAttribute('style');
-    }
+    // Status Style - use CSS class from selector
+    elements.charStatus.className = `cy-badge ${viewState.statusClass}`;
 
-    // HP Bar
+    // HP Bar (width still needs inline for dynamic value)
     elements.hpBar.style.width = `${viewState.hpPercent}%`;
     elements.hpText.textContent = `${char.hp} / ${viewState.maxHp}`;
 
-    // Apply glitch effect if low HP
-    if (char.hp < (viewState.maxHp * 0.2)) {
-        elements.hpBar.classList.add('critical');
-    } else {
-        elements.hpBar.classList.remove('critical');
-    }
+    // Apply critical class if low HP
+    elements.hpBar.classList.toggle('critical', char.hp < (viewState.maxHp * 0.2));
 
     // EXP Bar
     elements.expBar.style.width = `${viewState.expPercent}%`;
-    const penaltySuffix = viewState.isFainted
-        ? (viewState.isStabilized
-            ? ' <span style="color:var(--cy-neon-gold); font-size:0.6em;">[-25% GAIN]</span>'
-            : ' <span style="color:var(--cy-neon-red); font-size:0.6em;">[-50% GAIN]</span>')
-        : '';
-    elements.expText.innerHTML = `${Math.floor(char.currentExp)}/${Math.floor(char.maxExp)}${penaltySuffix}`;
+
+    // Penalty indicator using class instead of inline style
+    let penaltyHtml = '';
+    if (viewState.isFainted) {
+        const penaltyClass = viewState.isStabilized ? 'penalty-stabilized' : 'penalty-fainted';
+        const penaltyText = viewState.isStabilized ? '[-25% GAIN]' : '[-50% GAIN]';
+        penaltyHtml = ` <span class="exp-penalty ${penaltyClass}">${penaltyText}</span>`;
+    }
+    elements.expText.innerHTML = `${Math.floor(char.currentExp)}/${Math.floor(char.maxExp)}${penaltyHtml}`;
 
     // Global Visual Feedback
     document.body.classList.toggle('is-fainted', viewState.isFainted);
@@ -146,12 +140,8 @@ function renderDashboard(char) {
         if (!stabilizerBtn) {
             stabilizerBtn = document.createElement('button');
             stabilizerBtn.id = 'btn-stabilizer';
-            stabilizerBtn.className = 'cy-btn cy-btn-stabilizer';
+            stabilizerBtn.className = 'cy-btn cy-btn-stabilizer status-stabilized';
             stabilizerBtn.innerHTML = 'ACTIVATE STABILIZER [200G]';
-            stabilizerBtn.style.width = '100%';
-            stabilizerBtn.style.marginTop = '10px';
-            stabilizerBtn.style.borderColor = 'var(--cy-neon-gold)';
-            stabilizerBtn.style.color = 'var(--cy-neon-gold)';
             stabilizerBtn.onclick = (e) => window.UI.safeTransaction(e.target, () => window.Store.triggerStabilizer());
 
             // Append to char-info
@@ -197,7 +187,7 @@ function renderHabits(habits) {
     });
 }
 
-let lastLogCount = 0;
+let lastRenderedLogId = 0;
 let isUserScrolling = false;
 
 function renderLogs(logs) {
@@ -206,8 +196,6 @@ function renderLogs(logs) {
     // Auto-scroll Detection Setup (One-time)
     if (!elements.actionLog._scrollListenerAttached) {
         elements.actionLog.addEventListener('scroll', () => {
-            // Logic: If user is close to bottom (within 20px), auto-scroll is ON.
-            // If user scrolls up, auto-scroll is OFF.
             const { scrollTop, scrollHeight, clientHeight } = elements.actionLog;
             const distanceToBottom = scrollHeight - (scrollTop + clientHeight);
             isUserScrolling = distanceToBottom > 20;
@@ -215,13 +203,18 @@ function renderLogs(logs) {
         elements.actionLog._scrollListenerAttached = true;
     }
 
-    // Incremental Update
-    if (logs.length < lastLogCount) {
+    // Find new logs (ID-based)
+    const newLogs = logs.filter(log => log.id > lastRenderedLogId);
+
+    // Check if we need to clear (e.g. game reset)
+    // If we have no new logs, but the total logs count is small and our last ID is huge, 
+    // it implies a reset. Or if logs array is empty.
+    if (logs.length === 0 && lastRenderedLogId > 0) {
         elements.actionLog.innerHTML = '';
-        lastLogCount = 0;
+        lastRenderedLogId = 0;
+        return;
     }
 
-    const newLogs = logs.slice(lastLogCount);
     if (newLogs.length === 0) return;
 
     const fragment = document.createDocumentFragment();
@@ -229,45 +222,37 @@ function renderLogs(logs) {
 
     newLogs.forEach(log => {
         const div = document.createElement('div');
-        div.className = 'log-entry';
+
+        // Derive severity class
+        let severityClass = 'log-info';
+        if (log.severity === 'SUCCESS') severityClass = 'log-success';
+        else if (log.severity === 'WARN') severityClass = 'log-warn';
+        else if (log.severity === 'ERROR') severityClass = 'log-error';
+        else if (log.severity === 'CRITICAL') {
+            severityClass = 'log-critical';
+            hasCritical = true;
+        }
+
+        div.className = `log-entry ${severityClass} anim-enter`;
 
         // Handle Legacy Logs vs New Structure
         const time = log.time || log.timestamp;
         const msg = log.message;
         const category = log.category || 'SYSTEM';
-        const severity = log.severity || (log.type === 'failure' ? 'ERROR' : 'INFO');
 
-        // Styles
-        if (severity === 'SUCCESS') div.classList.add('log-success');
-        if (severity === 'WARN') {
-            div.classList.add('log-warn');
-            div.classList.add('log-pulse');
-        }
-        if (severity === 'ERROR') div.classList.add('log-error');
-        if (severity === 'CRITICAL') {
-            div.classList.add('log-critical');
-            hasCritical = true;
-        }
-
-        // Check for pulse animation request from legacy? No, handled by severity.
-
-        div.innerHTML = `<span class="log-time" style="opacity:0.6">[${time}]</span> <span style="font-weight:bold; opacity:0.8">[${category}]</span> ${msg}`;
-
-        // Manual color assignment fallback for styles not in CSS (or use CSS classes strictly)
-        // We added .log-warn, .log-critical to CSS.
-        // Need .log-success, .log-error?
-        if (severity === 'SUCCESS') div.style.color = 'var(--cy-neon-green)';
-        if (severity === 'ERROR') div.style.color = 'var(--cy-neon-red)';
+        div.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-category">[${category}]</span> ${msg}`;
 
         fragment.appendChild(div);
+
+        // Update tracker
+        if (log.id > lastRenderedLogId) {
+            lastRenderedLogId = log.id;
+        }
     });
 
     elements.actionLog.appendChild(fragment);
-    lastLogCount = logs.length;
 
     // Auto-Scroll Logic
-    // If CRITICAL: Force Scroll
-    // Else: Only if user is already at bottom
     if (hasCritical || !isUserScrolling) {
         elements.actionLog.scrollTop = elements.actionLog.scrollHeight;
     }
