@@ -318,7 +318,12 @@ body {
     animation: ghost-flicker 2s infinite alternate;
     position: relative;
     user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
     /* Prevent text selection during hold */
+    z-index: 1000;
+    /* Force top */
+    cursor: pointer;
 }
 
 /* Hold Interaction Visuals */
@@ -393,31 +398,169 @@ body {
 }
 
 /* =========================================
-   DISINTEGRATION EFFECTS
-   ========================================= */
+   RITUAL FEEDBACK STYLES
+   ================================********* */
 
+/* Threshold 1: 60% - Inner Glow */
+.habit-item.ritual-glow {
+    box-shadow: inset 0 0 20px var(--cy-neon-green) !important;
+    border-color: var(--cy-neon-green) !important;
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+/* Threshold 2: 80% - High Freq Shake */
+.habit-item.ritual-shake {
+    animation: ritual-vibration 0.1s infinite;
+}
+
+/* Threshold 3: 95% - Spike/Pulse */
+.habit-item.ritual-spike {
+    animation: ritual-spike-pulse 0.2s infinite alternate;
+    background: rgba(0, 255, 65, 0.1);
+    z-index: 9999;
+}
+
+/* Abort Animation (Swipe) */
+.habit-item.ritual-abort {
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+    transform: translateX(-50px);
+    opacity: 0;
+}
+
+@keyframes ritual-vibration {
+    0% {
+        transform: translate(1px, 1px) rotate(0deg);
+    }
+
+    10% {
+        transform: translate(-1px, -2px) rotate(-1deg);
+    }
+
+    20% {
+        transform: translate(-3px, 0px) rotate(1deg);
+    }
+
+    30% {
+        transform: translate(3px, 2px) rotate(0deg);
+    }
+
+    40% {
+        transform: translate(1px, -1px) rotate(1deg);
+    }
+
+    50% {
+        transform: translate(-1px, 2px) rotate(-1deg);
+    }
+
+    60% {
+        transform: translate(-3px, 1px) rotate(0deg);
+    }
+
+    70% {
+        transform: translate(3px, 1px) rotate(-1deg);
+    }
+
+    80% {
+        transform: translate(-1px, -1px) rotate(1deg);
+    }
+
+    90% {
+        transform: translate(1px, 2px) rotate(0deg);
+    }
+
+    100% {
+        transform: translate(1px, -2px) rotate(-1deg);
+    }
+}
+
+@keyframes ritual-spike-pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 10px var(--cy-neon-green);
+    }
+
+    100% {
+        transform: scale(1.02);
+        box-shadow: 0 0 25px var(--cy-neon-green), inset 0 0 20px var(--cy-neon-green);
+    }
+}
+
+/* =========================================
+   DISINTEGRATION EFFECTS (PROMPT 3)
+   ================================********* */
+
+/* Main Element Decay */
+.habit-item.disintegrating {
+    pointer-events: none;
+    animation: disintegration-decay 0.6s ease-out forwards;
+    filter: grayscale(100%) contrast(1.2);
+    z-index: 9999;
+}
+
+@keyframes disintegration-decay {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+        filter: blur(0px) grayscale(0%);
+    }
+
+    20% {
+        transform: scale(1.02) rotate(1deg);
+        filter: blur(1px) grayscale(50%);
+    }
+
+    100% {
+        transform: scale(0.9) rotate(-2deg);
+        opacity: 0;
+        filter: blur(4px) grayscale(100%);
+    }
+}
+
+/* Fragment Particles */
 .ritual-fragment {
     position: absolute;
-    width: 6px;
-    height: 6px;
+    width: var(--size, 6px);
+    height: var(--size, 6px);
     background-color: var(--cy-neon-blue);
     box-shadow: 0 0 5px var(--cy-neon-blue);
     pointer-events: none;
     z-index: 9999;
-    animation: disintegrate-scatter 0.6s ease-out forwards;
+    /* Random rotation handled in JS or varied classes */
+    animation: disintegrate-scatter 0.8s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
+    border-radius: var(--radius, 0%);
+}
+
+.ritual-fragment.shard-sm {
+    --size: 4px;
+    --radius: 50%;
+    opacity: 0.8;
+}
+
+.ritual-fragment.shard-md {
+    --size: 8px;
+    --radius: 0%;
+    opacity: 1;
+}
+
+.ritual-fragment.shard-lg {
+    --size: 12px;
+    --radius: 2px;
+    opacity: 1;
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
 }
 
 @keyframes disintegrate-scatter {
     0% {
-        transform: translate(0, 0) scale(1);
+        transform: translate(0, 0) scale(1) rotate(0deg);
         opacity: 1;
     }
 
     100% {
-        transform: translate(var(--tx), var(--ty)) scale(0);
+        transform: translate(var(--tx), var(--ty)) scale(0) rotate(var(--rot, 360deg));
         opacity: 0;
     }
 }
+
 
 /* Bars Container */
 .bars-container {
@@ -995,4 +1138,65 @@ body.is-fainted {
 .anim-pulse {
     animation: pulse-anim 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28);
     color: var(--cy-neon-gold) !important;
+}
+
+/* Ritual Feedback States */
+.pulse-weak {
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.2) inset;
+    transition: box-shadow 0.2s;
+}
+
+.pulse-med {
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5) inset;
+    transform: translateX(1px);
+    /* Slight jitter */
+}
+
+.pulse-strong {
+    box-shadow: 0 0 25px rgba(0, 255, 255, 0.8) inset;
+    border-color: #fff !important;
+    transform: scale(1.02);
+}
+
+.is-ghost[data-ritual-state="ABORTED"] {
+    transition: all 0.5s;
+    filter: grayscale(1);
+    transform: scale(0.9);
+}
+
+/* =========================================
+   SYSTEM LOG ENHANCEMENTS (PROMPT 4)
+   ================================********* */
+
+.log-entry.log-warn {
+    color: var(--cy-neon-gold);
+    border-left: 2px solid var(--cy-neon-gold);
+    padding-left: 5px;
+}
+
+.log-entry.log-critical {
+    color: var(--cy-neon-red);
+    font-weight: bold;
+    border-left: 3px solid var(--cy-neon-red);
+    padding-left: 5px;
+    background: rgba(255, 62, 62, 0.1);
+}
+
+.log-pulse {
+    animation: log-pulse-anim 2s infinite;
+}
+
+@keyframes log-pulse-anim {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 1;
+        text-shadow: 0 0 5px currentColor;
+    }
 }

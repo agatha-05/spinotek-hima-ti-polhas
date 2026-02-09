@@ -9,6 +9,9 @@ window.Ritual = {
     init() {
         const templates = document.querySelectorAll('.ghost-template');
         const dropZone = document.getElementById('habit-list');
+        // ... (keep existing init code logic if I could, but I need to substitute the whole block or match carefully)
+        // Actually, let's just add the function to the object.
+        // I will use a larger replacement to ensure I don't break init.
 
         // Drag Source Logic
         templates.forEach(drag => {
@@ -77,47 +80,91 @@ function createGhostHabit(template, container) {
 }
 
 function setupHoldInteraction(element, template) {
-    // CLOSURE STATE: Strictly isolated to this element instance
-    let holdTimer = null;
-    let progress = 0;
+    if (window.RitualDebugLog) window.RitualDebugLog('setupHoldInteraction: Called for ' + template.name);
 
-    // Explicit State Machine
+    // Force pointer events for safety
+    element.style.pointerEvents = 'all';
+    element.style.zIndex = '9999';
+    element.style.position = 'relative'; // Ensure z-index works
+
+    // Ritual Fatigue State (Closure)
+    // Tracks usage within this specific ghost instance life? 
+    // No, fatigue should be global or at least persistent across multiple adds? 
+    // "Reset alami saat idle" -> implies global time-based tracking.
+    // Let's attach it to window.Ritual for persistence across different ghost adds.
+    if (!window.Ritual.fatigue) {
+        window.Ritual.fatigue = { count: 0, lastTime: 0 };
+    }
+
+    // Dynamic Duration Calculation
+    const BASE_DURATION = 5000;
+    const now = Date.now();
+    // Reset if idle for > 10 seconds
+    if (now - window.Ritual.fatigue.lastTime > 10000) {
+        window.Ritual.fatigue.count = 0;
+    }
+    const currentDuration = BASE_DURATION + (window.Ritual.fatigue.count * 500); // +0.5s per habit
+
+
+
+    // Touch Tracking
+    let touchStartY = 0;
+
+    // State Helper
     const setState = (newState) => {
         element.dataset.ritualState = newState;
-        // Keep class sync for existing CSS, or migrate CSS to use [data-ritual-state]
-        if (newState === 'MATERIALIZING') element.classList.add('is-materializing');
-        else element.classList.remove('is-materializing');
-
-        if (newState === 'COMMITTED') element.classList.add('is-born');
     };
-
-    // Initialize State
     setState('IDLE');
-    const HOLD_DURATION_MS = 1000;
 
     const startHold = (e) => {
-        // Prevent default touch scrolling or selection
-        if (e.type === 'touchstart') e.preventDefault();
+        // Prevent default touch scrolling
+        if (e.type === 'touchstart') {
+            e.preventDefault();
+            touchStartY = e.touches[0].clientY;
+        } else if (e.type === 'mousedown') {
+            touchStartY = e.clientY;
+        }
 
-        // Only allow start if IDLE
         if (element.dataset.ritualState !== 'IDLE') return;
 
         setState('MATERIALIZING');
         let startTime = Date.now();
 
+        // Reset classes
+        element.classList.remove('ritual-glow', 'ritual-shake', 'ritual-spike');
+
         const tick = () => {
-            // Safety check: if state changed externally (e.g. disintegrated), stop
             if (element.dataset.ritualState !== 'MATERIALIZING') return;
 
             const elapsed = Date.now() - startTime;
-            progress = Math.min((elapsed / HOLD_DURATION_MS) * 100, 100);
+            progress = Math.min((elapsed / currentDuration) * 100, 100);
 
             // Visual Update
             element.style.setProperty('--progress', `${progress}%`);
 
+            // Feedback Thresholds
+            // 95% -> Spike (Critical Mass)
+            if (progress > 95) {
+                element.classList.add('ritual-spike');
+                element.classList.remove('ritual-shake');
+            }
+            // 80% -> Shake (Instability)
+            else if (progress > 80) {
+                element.classList.add('ritual-shake');
+                element.classList.remove('ritual-glow');
+            }
+            // 60% -> Glow (Energy building)
+            else if (progress > 60) {
+                element.classList.add('ritual-glow');
+            }
+
             if (progress >= 100) {
-                // Success!
+                // Success
                 setState('COMMITTED');
+                // Increment Fatigue
+                window.Ritual.fatigue.count++;
+                window.Ritual.fatigue.lastTime = Date.now();
+
                 completeRitual(element, template);
             } else {
                 holdTimer = requestAnimationFrame(tick);
@@ -127,41 +174,74 @@ function setupHoldInteraction(element, template) {
         holdTimer = requestAnimationFrame(tick);
     };
 
-    const cancelHold = () => {
-        // Only intervene if currently materializing
+    const detectSwipe = (e) => {
         if (element.dataset.ritualState !== 'MATERIALIZING') return;
 
-        // Stop the timer
+        let clientY;
+        if (e.type === 'touchmove') {
+            clientY = e.touches[0].clientY;
+        } else if (e.type === 'mousemove') {
+            // Only tracking if holding
+            if (e.buttons !== 1) return;
+            clientY = e.clientY;
+        } else {
+            return;
+        }
+
+        const diff = clientY - touchStartY;
+
+        // Swipe Threshold (50px to trigger abort)
+        if (Math.abs(diff) > 50) {
+            cancelAnimationFrame(holdTimer);
+            abortRitual(element);
+        }
+    };
+
+    const cancelHold = (e) => {
+        if (element.dataset.ritualState !== 'MATERIALIZING') return;
+
         if (holdTimer) cancelAnimationFrame(holdTimer);
 
-        // Decision: Click or Fail?
-        // If progress is very low (e.g. < 5%) treat as click/mistake?
-        // Requirement says: "Release hold before full -> Disintegrate".
-        // Let's be strict but forgive instant clicks (< 50ms isn't visibly holding).
-        // Actually, logic said "If progress > 0 and < 100".
-
+        // Fail Logic (Release too early = Disintegrate)
         if (progress > 5 && progress < 100) {
             setState('DISINTEGRATING');
             disintegrate(element);
         } else {
-            // Just reset (too fast to be a hold attempt, or safety fallback)
+            // Clean reset if practically 0 progress
             setState('IDLE');
             element.style.setProperty('--progress', '0%');
+            element.classList.remove('ritual-glow', 'ritual-shake', 'ritual-spike');
         }
-
         progress = 0;
     };
 
-    // Event Binding - Scoped to this element
-    // Desktop
+    // Event Binding
     element.addEventListener('mousedown', startHold);
     element.addEventListener('mouseup', cancelHold);
     element.addEventListener('mouseleave', cancelHold);
+    element.addEventListener('mousemove', detectSwipe);
 
-    // Mobile
-    element.addEventListener('touchstart', startHold);
+    element.addEventListener('touchstart', startHold, { passive: false });
     element.addEventListener('touchend', cancelHold);
     element.addEventListener('touchcancel', cancelHold);
+    element.addEventListener('touchmove', detectSwipe, { passive: false });
+}
+
+function abortRitual(element) {
+    element.dataset.ritualState = 'ABORTED';
+    element.style.setProperty('--progress', '0%');
+    element.classList.remove('ritual-glow', 'ritual-shake', 'ritual-spike');
+
+    // Add visual feedback for abort (slide out)
+    element.classList.add('ritual-abort');
+
+    // Reset after animation
+    setTimeout(() => {
+        element.classList.remove('ritual-abort');
+        element.style.opacity = '1';
+        element.style.transform = 'none';
+        element.dataset.ritualState = 'IDLE';
+    }, 300);
 }
 
 function disintegrate(element) {
@@ -172,43 +252,63 @@ function disintegrate(element) {
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    // 2. Remove Element immediately (The Void consumes it)
-    element.remove();
+    // 2. Add Decay Effect (Visual Freeze)
+    element.classList.add('disintegrating');
 
-    // 3. Log Failure (Use Template ID or Name if available, otherwise Generic)
-    const habitName = element.querySelector('.habit-name')?.innerText || 'Unknown Protocol';
-    window.Store.addLogEntry(`SYSTEM: '${habitName}' disintegrated. Commitment failed.`, 'failure');
-
-    // 4. Spawn Particles
-    const PARTICLE_COUNT = 15;
+    // 3. Spawn Particles (Enhanced "Glass" Scatter)
+    const PARTICLE_COUNT = 32;
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
         const p = document.createElement('div');
         p.className = 'ritual-fragment';
 
+        // Randomize shard type
+        const type = Math.random();
+        if (type > 0.7) p.classList.add('shard-lg');
+        else if (type > 0.3) p.classList.add('shard-md');
+        else p.classList.add('shard-sm');
+
         // Random spread
         const angle = Math.random() * Math.PI * 2;
-        const distance = 50 + Math.random() * 100; // Scatter distance
+        const distance = 60 + Math.random() * 120; // Widen scatter
         const tx = Math.cos(angle) * distance + 'px';
         const ty = Math.sin(angle) * distance + 'px';
+        const rot = (Math.random() - 0.5) * 720 + 'deg'; // Spin
 
         p.style.setProperty('--tx', tx);
         p.style.setProperty('--ty', ty);
+        p.style.setProperty('--rot', rot);
 
-        // Start position (center of destroyed element)
-        const jitterX = (Math.random() - 0.5) * rect.width;
-        const jitterY = (Math.random() - 0.5) * rect.height;
+        // Start position (distributed across element, not just center)
+        const jitterX = (Math.random() - 0.5) * rect.width * 0.8;
+        const jitterY = (Math.random() - 0.5) * rect.height * 0.8;
 
         p.style.left = (centerX + jitterX) + 'px';
         p.style.top = (centerY + jitterY) + 'px';
 
         document.body.appendChild(p);
 
-        // Cleanup particle
+        // Cleanup particle independently
         setTimeout(() => {
-            p.remove();
-        }, 600); // Match animation duration
+            if (p.parentNode) p.remove();
+        }, 800);
     }
+
+    // 4. Delayed Removal (Wait for animation)
+    setTimeout(() => {
+        if (element.parentElement) element.remove();
+    }, 600);
+
+    // 5. Delayed Log (Dramatic pause)
+    setTimeout(() => {
+        const habitName = element.querySelector('.habit-name')?.innerText || 'Unknown Protocol';
+        // USE NEW NARRATIVE LOGGING
+        if (window.Store && window.Store.logRitualResult) {
+            window.Store.logRitualResult(false, { type: 'disintegration', name: habitName });
+        } else {
+            window.Store.addLogEntry(`SYSTEM: '${habitName}' disintegrated. Commitment failed.`, 'failure');
+        }
+    }, 800);
 }
 
 function completeRitual(element, template) {
@@ -224,6 +324,14 @@ function completeRitual(element, template) {
         streak: 0
     };
 
-    window.Store.addLogEntry(`SYSTEM: Ritual complete. '${template.name}' materialized.`, 'success');
-    window.Store.addHabit(newHabit);
+    // Narrative Logging
+    if (window.Store && window.Store.logRitualResult) {
+        window.Store.logRitualResult(true, { name: template.name });
+    } else {
+        window.Store.addLogEntry(`Ritual complete. '${template.name}' materialized.`, 'success');
+    }
+
+    if (window.Store && window.Store.addHabit) {
+        window.Store.addHabit(newHabit);
+    }
 }

@@ -225,6 +225,8 @@ function renderLogs(logs) {
     if (newLogs.length === 0) return;
 
     const fragment = document.createDocumentFragment();
+    let hasCritical = false;
+
     newLogs.forEach(log => {
         const div = document.createElement('div');
         div.className = 'log-entry';
@@ -235,14 +237,28 @@ function renderLogs(logs) {
         const category = log.category || 'SYSTEM';
         const severity = log.severity || (log.type === 'failure' ? 'ERROR' : 'INFO');
 
-        // Color Coding
-        let color = 'var(--cy-text-dim)';
-        if (severity === 'SUCCESS') color = 'var(--cy-neon-green)';
-        if (severity === 'WARN') color = 'var(--cy-neon-gold)';
-        if (severity === 'ERROR' || severity === 'CRITICAL') color = 'var(--cy-neon-red)';
+        // Styles
+        if (severity === 'SUCCESS') div.classList.add('log-success');
+        if (severity === 'WARN') {
+            div.classList.add('log-warn');
+            div.classList.add('log-pulse');
+        }
+        if (severity === 'ERROR') div.classList.add('log-error');
+        if (severity === 'CRITICAL') {
+            div.classList.add('log-critical');
+            hasCritical = true;
+        }
 
-        div.style.color = color;
+        // Check for pulse animation request from legacy? No, handled by severity.
+
         div.innerHTML = `<span class="log-time" style="opacity:0.6">[${time}]</span> <span style="font-weight:bold; opacity:0.8">[${category}]</span> ${msg}`;
+
+        // Manual color assignment fallback for styles not in CSS (or use CSS classes strictly)
+        // We added .log-warn, .log-critical to CSS.
+        // Need .log-success, .log-error?
+        if (severity === 'SUCCESS') div.style.color = 'var(--cy-neon-green)';
+        if (severity === 'ERROR') div.style.color = 'var(--cy-neon-red)';
+
         fragment.appendChild(div);
     });
 
@@ -250,7 +266,9 @@ function renderLogs(logs) {
     lastLogCount = logs.length;
 
     // Auto-Scroll Logic
-    if (!isUserScrolling) {
+    // If CRITICAL: Force Scroll
+    // Else: Only if user is already at bottom
+    if (hasCritical || !isUserScrolling) {
         elements.actionLog.scrollTop = elements.actionLog.scrollHeight;
     }
 }

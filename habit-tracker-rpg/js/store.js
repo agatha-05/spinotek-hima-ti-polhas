@@ -39,7 +39,13 @@ function getInitialState() {
         ],
         logs: [
             { id: Date.now(), timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), message: 'SYSTEM: Welcome to Habit-Core RPG v4.0. Core Augmentation Online.', type: 'system' }
-        ]
+        ],
+        logContext: {
+            lastFailureType: null,
+            lastRitualSuccess: false,
+            failureCount: 0,
+            consecutiveSuccessCount: 0
+        }
     };
 }
 
@@ -61,6 +67,7 @@ function load() {
 
             if (!state.habits) state.habits = [...defaults.habits];
             if (!state.logs) state.logs = [...defaults.logs];
+            if (!state.logContext) state.logContext = { ...defaults.logContext };
         } catch (e) {
             console.error('Failed to parse save data', e);
             state = JSON.parse(JSON.stringify(defaults));
@@ -91,7 +98,27 @@ function notify() {
 /**
  * Public API
  */
+// Internal helper (Hoisted or defined before use)
+function addLog(msg, type) {
+    if (window.Store && window.Store.addLogEntry) {
+        // MAP LEGACY TYPES
+        let category = 'SYSTEM';
+        let severity = 'INFO';
+
+        if (type === 'success') severity = 'SUCCESS';
+        else if (type === 'failure') severity = 'ERROR';
+        else if (type === 'warn') severity = 'WARN';
+        else if (type === 'system') severity = 'INFO';
+
+        window.Store.addLogEntry(msg, category, severity);
+    }
+}
+
+/**
+ * Public API
+ */
 window.Store = {
+    // ... (init, getState, subscribe, etc.)
     init() {
         // Ensure RPG is loaded
         if (!window.RPG) {
@@ -130,6 +157,64 @@ window.Store = {
         save();
     },
 
+    // NEW: Contextual Logging Logic
+    logRitualResult(success, details = {}) {
+        const ctx = state.logContext;
+        const name = details.name || 'Unknown Protocol';
+
+        let message = '';
+        let severity = 'INFO';
+        let category = 'RITUAL';
+
+        if (success) {
+            if (ctx.lastFailureType === 'disintegration') {
+                message = `Protocol '${name}' Stabilized. Redemption achieved.`;
+                severity = 'SUCCESS';
+            } else if (ctx.consecutiveSuccessCount > 2) {
+                message = `Ritual complete. '${name}' materialized (Stream Stable).`;
+            } else {
+                message = `Ritual complete. '${name}' materialized.`;
+            }
+
+            // Update Context
+            ctx.lastRitualSuccess = true;
+            ctx.lastFailureType = null;
+            ctx.failureCount = 0;
+            ctx.consecutiveSuccessCount++;
+
+            this.addLogEntry(message, category, 'SUCCESS');
+
+        } else {
+            // Failure
+            const type = details.type || 'generic';
+
+            if (ctx.lastFailureType === type) {
+                ctx.failureCount++;
+                message = `Recurring instability detected (${ctx.failureCount}x). Check mental vectors.`;
+                severity = 'WARN';
+            } else {
+                ctx.failureCount = 1;
+                if (type === 'disintegration') {
+                    message = `SYSTEM: '${name}' disintegrated. Commitment failed.`;
+                } else if (type === 'abort') {
+                    message = `Ritual '${name}' aborted.`;
+                } else {
+                    message = `Ritual '${name}' failed.`;
+                }
+            }
+
+            if (ctx.failureCount > 2) severity = 'CRITICAL';
+
+            // Update Context
+            ctx.lastRitualSuccess = false;
+            ctx.lastFailureType = type;
+            ctx.consecutiveSuccessCount = 0;
+
+            this.addLogEntry(message, category, severity);
+        }
+        save();
+    },
+
     triggerStabilizer() {
         // Validate state first to prevent wasted gold
         this.validateState();
@@ -139,11 +224,11 @@ window.Store = {
         if (!window.RPG.canUseNeuralStabilizer(char)) {
             // Specific feedback based on why it failed
             if (char.status !== window.RPG.CHARACTER_STATUS.FAINTED) {
-                addLog(`SYSTEM: Stabilizer aborted. Neural patterns already normalized.`, 'system');
+                this.addLogEntry(`SYSTEM: Stabilizer aborted. Neural patterns already normalized.`, 'SYSTEM', 'INFO');
             } else if (char.debuff && char.debuff.stabilized) {
-                addLog(`SYSTEM: Stabilizer aborted. Already active.`, 'system');
+                this.addLogEntry(`SYSTEM: Stabilizer aborted. Already active.`, 'SYSTEM', 'INFO');
             } else if (char.gold < window.RPG.NEURAL_STABILIZER_COST) {
-                addLog(`SYSTEM: Stabilizer aborted. Insufficient resources.`, 'failure');
+                this.addLogEntry(`SYSTEM: Stabilizer aborted. Insufficient resources.`, 'SYSTEM', 'ERROR');
             }
             return; // Stop execution
         }
@@ -153,10 +238,10 @@ window.Store = {
 
         if (result.success) {
             state.character = result.character;
-            addLog(`SYSTEM: Neural Stabilizer activated. EXP penalty reduced.`, 'success');
+            this.addLogEntry(`SYSTEM: Neural Stabilizer activated. EXP penalty reduced.`, 'SYSTEM', 'SUCCESS');
             save(); // Triggers notify
         } else {
-            addLog(`SYSTEM: Stabilizer failed. ${result.reason}`, 'failure');
+            this.addLogEntry(`SYSTEM: Stabilizer failed. ${result.reason}`, 'SYSTEM', 'ERROR');
             notify(); // Ensure UI reflects any attempt
         }
     },
@@ -166,9 +251,8 @@ window.Store = {
 
         // Use Guard Function
         const char = state.character;
-        // Note: Logic inside purchaseUpgrade also checks this, but Store shouldn't call it if invalid.
         if (!window.RPG.canPurchaseUpgrade(char, type)) {
-            addLog(`SYSTEM: Authorization denied. Criteria met for ${type}? [NEGATIVE]`, 'failure');
+            this.addLogEntry(`SYSTEM: Authorization denied. Criteria met for ${type}? [NEGATIVE]`, 'SYSTEM', 'ERROR');
             notify();
             return;
         }
@@ -185,27 +269,20 @@ window.Store = {
             }
 
             state.character = result.character;
-            // Persist flag changes (result.character might not have them if RPG logic didn't pass them back)
-            // Actually RPG logic returns {...character, ...} so it should preserve flags if they existed.
-            // But we just added flags to state.character above.
-            // Let's ensure they are synced. 
             state.character.flags = state.character.flags || {};
-            state.character.flags.hasUpgraded = true;
-
             state.character.flags.hasUpgraded = true;
 
             this.addLogEntry(`Augmentation installed: ${result.upgradeName} (Lvl ${result.newLevel})`, 'UPGRADE', 'SUCCESS');
             window.UI.triggerEffect('char-gold', 'anim-pulse');
             save();
         } else {
-            addLog(`SYSTEM: Upgrade Error: ${result.reason}`, 'failure');
+            this.addLogEntry(`SYSTEM: Upgrade Error: ${result.reason}`, 'SYSTEM', 'ERROR');
             notify();
         }
     },
 
     /**
      * Centralized State Validation
-     * Checks time-based recovery and ensures consistency.
      */
     validateState() {
         if (!state || !state.character) return false;
@@ -223,12 +300,13 @@ window.Store = {
         return false;
     },
 
-    addLogEntry(message, type = 'system') {
+    addLogEntry(message, category = 'SYSTEM', severity = 'INFO') {
         const entry = {
             id: Date.now(),
             timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
             message,
-            type
+            category,
+            severity
         };
         state.logs.push(entry);
         if (state.logs.length > 50) state.logs.shift(); // Remove oldest (from front)
@@ -248,7 +326,6 @@ window.Store = {
 
     /**
      * Core Action: Execute Habit
-     * Handles Logic + Narrative + State Update
      */
     executeHabit(habitId) {
         this.validateState();
@@ -285,17 +362,7 @@ window.Store = {
 
         // Update State
         state.character = result;
-
-        // Update Habit Streak (Simple increment for now, logic not in RPG yet?)
-        // Assuming simplistic streak logic resides in Store or App usually, but sticking to result usage.
-        // Wait, RPG logic didn't return updated habits. We must update habit manually here?
-        // Previous app.js didn't update habit streak! It just accessed logic. 
-        // We should fix that too as a bonus or stick to previous behavior?
-        // Looking at app.js: "const habit = state.habits.find..." -> "executeHabit(state.character...)" -> "Store.updateCharacter".
-        // Use "streak" from somewhere? No, streak was in habit object but logic didn't update it.
-        // I will increment streak here to improve it.
         habit.streak = (habit.streak || 0) + 1;
-
         save();
     },
 
@@ -337,10 +404,3 @@ window.Store = {
         save();
     }
 };
-
-// Internal helper 
-function addLog(msg, type) {
-    if (window.Store && window.Store.addLogEntry) {
-        window.Store.addLogEntry(msg, type);
-    }
-}
